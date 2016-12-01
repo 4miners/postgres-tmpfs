@@ -1,0 +1,83 @@
+[Unit]
+Description=PostgreSQL 9.6 in RAM
+# This unit can only run after the network is up and running
+# (that is, the network target has run)
+After=network.target
+
+[Service]
+# PostgreSQL is a traditional UNIX daemon that forks a child,
+# and the initial process exits
+Type=forking
+# Wait 120 seconds on startup and shutdown to consider the process
+# correctly started up or shut down.
+TimeoutSec=120
+# The UNIX user and group to execute PostgreSQL as
+User=postgres
+Group=postgres
+
+# Set the PGROOT environmental variable for PostgreSQL
+Environment=PGROOT=/mnt/postgres
+
+# If StandardOutput= or StandardError= are set to syslog, journal or kmsg,
+# prefix log lines with "postgres"
+SyslogIdentifier=postgres
+
+# Let systemd know where PostgreSQL keeps its pid file
+PIDFile=/mnt/postgres/postmaster.pid
+
+# IMPORTANT! Run ExecStartPre with root-permissions
+# so that the mkdir command on /run will succeed
+# (won't succeed as user postgres)
+PermissionsStartOnly=true
+
+# Set up everything before PostgreSQL starts
+ExecStartPre=-/bin/mkdir ${PGROOT}
+ExecStartPre=-/bin/mount -t tmpfs -o size=10G tmpfs ${PGROOT}
+ExecStartPre= /bin/chown postgres:postgres ${PGROOT}
+ExecStartPre= /bin/chmod 700 ${PGROOT}
+# Important: the leading minus sign means ignore errors; in this case,
+# initdb may have already been run on a previous start, and will error
+# out trying to re-create a database cluster dir that already exists.
+ExecStartPre=-/usr/bin/sudo -u postgres \
+        /usr/lib/postgresql/9.6/bin/initdb \
+            --pgdata=${PGROOT} \
+            --encoding=UTF8 \
+            --no-locale
+
+# After PostgreSQL starts, load the database schema
+ExecStartPost= /usr/lib/postgresql/9.6/bin/psql \
+    -X \
+    -U postgres \
+    -d postgres \
+    -f /usr/lib/postgresql/9.6/bin/ramdb.sql
+
+# Start PostgreSQL in RAM
+ExecStart= /usr/lib/postgresql/9.6/bin/pg_ctl \
+    -s -D ${PGROOT} start -w -t 120 \
+    -o "--fsync=off --wal-buffers=32kB \
+    --effective_io_concurrency=1000 \
+    --seq-page-cost=0.01  \
+    --random-page-cost=0.01 --effective-cache-size=64kB \
+    --max-connections=1000 \
+    --autovacuum_max_workers=6 \
+    --autovacuum_naptime=15s \
+    --autovacuum_vacuum_threshold=25 \
+    --autovacuum_vacuum_scale_factor=0.1 \
+    --autovacuum_analyze_threshold=10 \
+    --autovacuum_analyze_scale_factor=0.05 \
+    --autovacuum_vacuum_cost_delay=10ms \
+    --autovacuum_vacuum_cost_limit=1000"
+
+# Reload PostgreSQL in RAM
+ExecReload=/usr/lib/postgresql/9.6/bin/pg_ctl -s -D ${PGROOT} reload
+
+# Stop PostgreSQL in RAM
+ExecStop=  /usr/lib/postgresql/9.6/bin/pg_ctl -s -D ${PGROOT} stop -m fast
+
+# Use the lowest allowable setting for the OOM killer; this should
+# actually disable the OOM killer for PostgreSQL
+OOMScoreAdjust=-1000
+
+[Install]
+# This unit is part of target multi-user
+WantedBy=multi-user.target
