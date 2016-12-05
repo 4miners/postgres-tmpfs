@@ -55,6 +55,10 @@ ExecStartPost= /usr/lib/postgresql/9.6/bin/psql \
 ExecStart= /usr/lib/postgresql/9.6/bin/pg_ctl \
     -s -D ${PGROOT} start -w -t 120 \
     -o "--fsync=off --wal-buffers=32kB \
+    --shared-buffers=1024kB \
+    --temp-buffers=1024kB \
+    --maintenance-work-mem=1024kB \
+    --work-mem=64kB \
     --effective_io_concurrency=1000 \
     --seq-page-cost=0.01  \
     --random-page-cost=0.01 --effective-cache-size=64kB \
